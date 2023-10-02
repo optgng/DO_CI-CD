@@ -1,0 +1,109 @@
+stages:
+  - build
+  - code_style
+  - testing
+  - deploy
+
+build_cat:
+  stage: build
+  tags:
+    - cat_building
+  only: 
+    - develop
+  script:
+    - cd src/cat
+    - make s21_cat
+  artifacts:
+    paths:
+      - src/cat/s21_cat
+    expire_in: 30 days
+  after_script:
+    - bash tg_notification.sh
+  
+build_grep:
+  stage: build
+  tags:
+    - grep_building
+  only: 
+    - develop
+  script:
+    - cd src/grep
+    - make s21_grep
+  artifacts:
+    paths:
+      - src/grep/s21_grep
+    expire_in: 30 days
+  after_script:
+    - bash tg_notification.sh
+
+clang_format:
+  stage: code_style
+  tags:
+    - code_styling
+  only: 
+    - develop
+  script:
+    - cd src
+    - |
+          ERRORS=$(clang-format --dry-run --style=Google --Werror cat/*.c grep/*.c)
+          if [ -n "$ERRORS" ]; then
+            echo "$ERRORS"
+            exit 1
+          fi
+  after_script:
+    - bash tg_notification.sh  
+      
+testing_cat:
+  stage: testing
+  tags:
+    - cat_testing
+  when: on_success
+  only: 
+    - develop
+  script:
+    - cd src/cat
+    - |
+      OUTPUT=$(bash test_cat.sh)
+      echo "$OUTPUT"
+      if echo "$OUTPUT" | grep -q "FAIL: [1-9]"; then
+        echo "Tests failed"
+        exit 1
+      else
+        echo "Tests passed"
+      fi
+  after_script:
+    - bash tg_notification.sh
+
+testing_grep:
+  stage: testing
+  tags:
+    - grep_testing
+  when: on_success
+  only: 
+    - develop
+  script:
+    - cd src/grep
+    - |
+      OUTPUT=$(bash test_grep.sh)
+      echo "$OUTPUT"
+      if echo "$OUTPUT" | grep -q "FAIL: [1-9]"; then
+        echo "Tests failed"
+        exit 1
+      else
+        echo "Tests passed"
+      fi
+  after_script:
+    - bash tg_notification.sh
+
+deploying:
+  stage: deploy
+  tags:
+    - cat_grep_deploy
+  when: manual
+  only:
+    - develop
+  script:
+    - scp src/cat/s21_cat src/grep/s21_grep teod@192.168.56.102:/usr/local/bin
+    - ssh teod@192.168.56.102 "s21_cat bib.txt && s21_grep a bib.txt"
+  after_script:
+    - bash tg_notification.sh
